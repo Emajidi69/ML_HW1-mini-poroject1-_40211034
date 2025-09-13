@@ -1,0 +1,589 @@
+# Mini_project1
+# Mohammad_Sefid 40206864
+# Erfan_Majidi 40211034
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.fftpack import fft
+import scipy.stats as stats
+import os
+import glob
+import joblib
+from joblib import dump
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression, SGDClassifier, Perceptron
+from sklearn.svm import SVC
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.utils import resample
+from sklearn.model_selection import GridSearchCV
+import librosa
+import lightgbm as lgb
+import shap
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.svm import SVC
+
+# 2.1
+# file path CSV
+file_path = '/content/drive/MyDrive/Colab Notebooks/MaFaulDa/Overhang_ball_fault.csv'
+
+# 2.1.3
+# read file CSV
+df = pd.read_csv(file_path, header=None)
+
+# delete first & last columns
+df_filtered = df.iloc[:, 1:-1]
+
+# columns number
+n_columns = len(df_filtered.columns)
+
+# define colors
+colors = plt.colormaps['tab10'](range(n_columns))
+
+# create plot X sequentially
+x_values = np.arange(len(df_filtered) * n_columns)
+
+# create plot
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# plot each column seperately
+for i, col in enumerate(df_filtered.columns):
+    start_index = i * len(df_filtered)
+    ax.plot(x_values[start_index:start_index + len(df_filtered)], df_filtered[col], color=colors[i], label=f'Column {col}')
+
+# add title and label
+ax.set_title('Sequential Plot of Columns 2 to 7')
+ax.set_xlabel('Sequential Index (Continuous)')
+ax.set_ylabel('Amplitude')
+ax.legend(loc='upper right')
+
+# show plot
+plt.tight_layout()
+plt.show()
+
+# 2.2
+# 2.2.1
+# Normalization
+scaler = StandardScaler()
+numeric_columns = df.select_dtypes(include=[np.number]).columns
+df[numeric_columns] = scaler.fit_transform(df[numeric_columns])
+
+# divide data to time windows
+window_size = 1024
+stride = 512
+
+def create_time_windows(data, window_size, stride):
+    windows = []
+    for start in range(0, len(data) - window_size, stride):
+        windows.append(data.iloc[start:start + window_size].values)
+    return np.array(windows)
+
+data_windows = create_time_windows(df, window_size, stride)
+
+# divide data to train and test
+train_data, test_data = train_test_split(data_windows, test_size=0.2, random_state=42)
+
+# 2.2.2
+import pandas as pd
+import numpy as np
+from scipy.fft import fft
+from scipy import stats
+from sklearn.feature_selection import mutual_info_regression
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+
+# ویژگی‌های حوزه زمان
+def extract_time_features(data):
+    data = np.asarray(data)
+    return pd.Series({
+        "Mean": np.mean(data),
+        "Std": np.std(data),
+        "Skewness": stats.skew(data),
+        "Kurtosis": stats.kurtosis(data),
+        "Max": np.max(data),
+        "Min": np.min(data)
+    })
+
+# ویژگی‌های حوزه فرکانس
+def extract_frequency_features(data, sampling_rate=50000):
+    data = np.asarray(data)
+    fft_values = fft(data)
+    fft_magnitudes = np.abs(fft_values)
+    freqs = np.fft.fftfreq(len(data), 1 / sampling_rate)
+    positive_mask = freqs >= 0
+    freqs_positive = freqs[positive_mask]
+    fft_magnitudes_positive = fft_magnitudes[positive_mask]
+    dominant_freq = freqs_positive[np.argmax(fft_magnitudes_positive)] if len(freqs_positive) > 0 else 0
+    rms_freq = np.sqrt(np.mean(fft_magnitudes ** 2))
+    return pd.Series({
+        "Dominant_Frequency": dominant_freq,
+        "RMS_Freq": rms_freq
+    })
+
+# استخراج ویژگی‌ها
+time_features_df = df[numeric_columns].apply(extract_time_features, axis=0).T
+freq_features_df = df[numeric_columns].apply(extract_frequency_features, axis=0, args=(50000,)).T
+features_df = pd.concat([time_features_df, freq_features_df], axis=1)
+
+print("ویژگی‌های استخراج‌شده:")
+print(features_df)
+
+# 2.3
+# 2.3.1
+# train and evaluate Logistic Regression
+def train_and_evaluate(X_train, X_test, y_train, y_test):
+    model = model = LogisticRegression(max_iter=1000, solver='saga', n_jobs=-1)
+    model.fit(X_train, y_train)
+    train_predictions = model.predict(X_train)
+    test_predictions = model.predict(X_test)
+
+    print("📊 Performance on Training Data:")
+    print(classification_report(y_train, train_predictions, zero_division=0))
+
+    print("\n📊 Performance on Test Data:")
+    print(classification_report(y_test, test_predictions, zero_division=0))
+
+    print("y_test is None:", y_test is None)
+    # Assign test_predictions to y_pred
+    y_pred = test_predictions
+
+    # Create larger figure and adjust layout
+    fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+
+    # Confusion Matrix for Training Data
+    cm_train = confusion_matrix(y_train, train_predictions)
+    disp_train = ConfusionMatrixDisplay(confusion_matrix=cm_train,
+                                      display_labels=model.classes_)
+    disp_train.plot(ax=axes[0], cmap=plt.cm.Blues, xticks_rotation=90)
+    axes[0].set_title("Confusion Matrix - Train", pad=20)
+
+    # Confusion Matrix for Test Data
+    cm_test = confusion_matrix(y_test, test_predictions)
+    disp_test = ConfusionMatrixDisplay(confusion_matrix=cm_test,
+                                     display_labels=model.classes_)
+    disp_test.plot(ax=axes[1], cmap=plt.cm.Blues, xticks_rotation=90)
+    axes[1].set_title("Confusion Matrix - Test", pad=20)
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_confusion_matrix(y_true, y_pred, title):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(12, 10))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm,
+                                 display_labels=np.unique(y_true))
+    disp.plot(cmap=plt.cm.Blues, xticks_rotation=90)
+    plt.title(title, pad=20)
+    plt.tight_layout()
+    plt.show()
+
+# 2.3.2
+# dataset path
+# read data and add labels
+def load_data(data_folder):
+    file_paths = glob.glob(os.path.join(data_folder, "*.csv"))
+    dataframes = []
+
+    for file_path in file_paths:
+        # Extract label from filename (assuming format is "fault_type.csv")
+        label = os.path.basename(file_path).replace(".csv", "")
+        df = pd.read_csv(file_path, header=None)  # Assuming no header in CSV files
+
+        # Add label column - make sure this matches your actual data structure
+        df["Label"] = label
+        dataframes.append(df)
+
+    final_df = pd.concat(dataframes, ignore_index=True)
+    return final_df
+
+# equalization data with upsampling
+def balance_data(df, method="upsampling"):
+    # First check if Label column exists
+    if "Label" not in df.columns:
+        raise ValueError("Label column not found in DataFrame")
+
+    balanced_df = pd.DataFrame()
+    class_counts = df["Label"].value_counts()
+    max_samples = class_counts.max()
+    min_samples = class_counts.min()
+
+    print(df["Label"].value_counts())  # shows numbers of each class
+    print(df["Label"].unique())        # shows list of all classes
+
+    for label in class_counts.index:
+        class_df = df[df["Label"] == label]
+        if method == "upsampling":
+            resampled_df = resample(class_df, replace=True, n_samples=max_samples, random_state=42)
+        elif method == "downsampling":
+            resampled_df = resample(class_df, replace=False, n_samples=min_samples, random_state=42)
+        else:
+            raise ValueError("method must be 'upsampling' or 'downsampling'")
+
+        balanced_df = pd.concat([balanced_df, resampled_df])
+
+    return balanced_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+def split_data(df, test_size=0.2):
+    X = df.drop(columns=["Label"])  # features
+    y = df["Label"]  # labels
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42, stratify=y)
+
+    # normalization features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    return X_train_scaled, X_test, y_train, y_test
+
+# drop missing data
+df = df.dropna()
+
+# non-hierarchical model
+def run_non_hierarchical(data_folder):
+    print("\n🔷 Running Non-Hierarchical Model 🔷")
+    df = load_data(data_folder)
+
+    if "Label" not in df.columns:
+        raise ValueError("Label column missing after processing")
+
+    balanced_df = balance_data(df, method="upsampling")
+    X_train, X_test, y_train, y_test = split_data(balanced_df)
+    train_and_evaluate(X_train, X_test, y_train, y_test)
+
+# hiearchical model
+def run_hierarchical(data_folder):
+    print("\n🔷 Running Hierarchical Model 🔷")
+    df = load_data(data_folder)
+
+    # Define the hierarchy mapping
+    hierarchy = {
+        "Normal": ["normal"],
+        "Imbalance": ["imbalance"],
+        "Misalignment": ["horizontal-misalignment", "vertical-misalignment"],
+        "Under-Hang": ["Underhang_ball_fault", "Underhang_cage_fault", "Underhang_outer_race"],
+        "Over-Hang": ["Overhang_ball_fault", "Overhang_cage_fault", "Overhang_outer_race"]}
+
+        # Define expected_labels based on the hierarchy
+    expected_labels = [label for sublist in hierarchy.values() for label in sublist]
+
+    print("Is there all desired classes in the dataset?")
+    print(set(expected_labels).issubset(set(df["Label"].unique())))
+
+    # Create main labels while preserving original labels
+    df["Main_Label"] = df["Label"].apply(lambda x: next((key for key, values in hierarchy.items() if x in values), x))
+
+    # # Step 1: main_classifiers
+    print("\n🟢 Step 1: Training Main Classifier")
+    balanced_main_df = balance_data(df, method="upsampling")
+
+    # For main classifier, we use Main_Label as target
+    X = balanced_main_df.drop(columns=["Main_Label", "Label"])
+    y = balanced_main_df["Main_Label"]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+    plt.figure(figsize=(10, 8))
+
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    train_and_evaluate(X_train_scaled, X_test_scaled, y_train, y_test)
+
+    # Step 2: Sub-classifiers
+    for main_class, sub_classes in hierarchy.items():
+        if len(sub_classes) == 1:
+            continue
+
+        print(f"\n🟡 Step 2: Training Sub-Classifiers for {main_class}")
+
+        # Get data for this main class only
+        sub_df = balanced_main_df[balanced_main_df["Main_Label"] == main_class]
+
+        # Balance the sub-classes
+        balanced_sub_df = balance_data(sub_df, method="upsampling")
+
+        # Use original Label for sub-classification
+        X_sub = balanced_sub_df.drop(columns=["Main_Label", "Label"])
+        y_sub = balanced_sub_df["Label"]
+
+        X_train_sub, X_test_sub, y_train_sub, y_test_sub = train_test_split(
+            X_sub, y_sub, test_size=0.2, random_state=42, stratify=y_sub)
+
+        plt.figure(figsize=(6, 5))
+
+        # Scale features
+        X_train_sub_scaled = scaler.transform(X_train_sub)
+        X_test_sub_scaled = scaler.transform(X_test_sub)
+
+        train_and_evaluate(X_train_sub_scaled, X_test_sub_scaled, y_train_sub, y_test_sub)
+
+data_folder = '/content/drive/MyDrive/Colab Notebooks/MaFaulDa'
+
+# execute non-hierarchical model
+run_non_hierarchical(data_folder)
+
+# execute hierarchical model
+run_hierarchical(data_folder)
+
+# 2.4
+def load_data(data_folder):
+    file_paths = glob.glob(os.path.join(data_folder, "*.csv"))
+    print("Found files:", file_paths)
+    if not file_paths:
+        raise FileNotFoundError(f"No CSV files found in path {data_folder}.")
+
+    dataframes = []
+    for file_path in file_paths:
+        label = os.path.basename(file_path).replace(".csv", "").lower()
+        try:
+            df = pd.read_csv(file_path, header=None)
+        except Exception as e:
+            print(f"Error reading {file_path}: {e}")
+            continue
+
+        if df.empty:
+            print(f"Warning: file {file_path} is empty!")
+            continue
+
+        df["Label"] = label
+        dataframes.append(df)
+
+    final_df = pd.concat(dataframes, ignore_index=True)
+    print(f"Data loaded. Total samples: {len(final_df)}")
+    return final_df
+
+
+def balance_data(X, y, method="SMOTE"):
+    if method == "SMOTE":
+        smote = SMOTE(random_state=42)
+        X_resampled, y_resampled = smote.fit_resample(X, y)
+    elif method == "undersampling":
+        rus = RandomUnderSampler(random_state=42)
+        X_resampled, y_resampled = rus.fit_resample(X, y)
+    else:
+        raise ValueError("Invalid method. Use 'SMOTE' or 'undersampling'.")
+    return X_resampled, y_resampled
+
+def preprocess_data(df, feature_indices=None):
+    if feature_indices is None:
+        feature_indices = list(range(len(df.columns) - 1))  # assume Label is the last column
+
+    X = df.iloc[:, feature_indices]
+    y = df['Label']
+    scaler = MinMaxScaler()
+    X_scaled = scaler.fit_transform(X)
+    return X_scaled, y, scaler
+
+def train_and_save_model(model, X_train, y_train, model_name, model_dir):
+    if not model_name.endswith(".pkl"):
+        model_name += ".pkl"
+    os.makedirs(model_dir, exist_ok=True)
+    model.fit(X_train, y_train)
+    model_path = os.path.join(model_dir, model_name)
+    joblib.dump(model, model_path)
+    print(f"Model '{model_name}' saved: {model_path}")
+    return model
+
+
+def load_model(model_name, model_dir):
+    if not model_name.endswith(".pkl"):
+        model_name += ".pkl"
+    model_path = os.path.join(model_dir, model_name)
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model '{model_name}' not found at '{model_dir}'.")
+    return joblib.load(model_path)
+
+# Hierarchical fault detection class
+class HierarchicalFaultDetector:
+    def __init__(self, base_path):
+        self.base_path = base_path
+        self.models = {}
+        self.scaler = None
+
+    def _get_model_path(self, level, name):
+        return os.path.join(self.base_path, f"{level}_{name}_model.pkl")
+
+    def train_model(self, X, y, level, name, use_sub_model=False):
+        print(f"🔧 Training model: {level} - {name}")
+        model = self.sub_model_class() if use_sub_model else self.top_model_class()
+        model.fit(X, y)
+        self.models[(level, name)] = model
+        joblib.dump(model, self._get_model_path(level, name))
+        print(f"✅ Model saved to {self._get_model_path(level, name)}")
+
+
+    def train(self, df):
+        # Preprocessing
+        X, y, self.scaler = preprocess_data(df)
+        joblib.dump(self.scaler, os.path.join(self.base_path, "scaler.pkl"))
+
+        # Top-level classification
+        top_level_labels = {
+            'normal': 'normal',
+            'imbalance': 'imbalance',
+            'horizontal-misalignment': 'misalignment',
+            'vertical-misalignment': 'misalignment',
+            'underhang_ball_fault': 'underhang',
+            'underhang_cage_fault': 'underhang',
+            'underhang_outer_race': 'underhang',
+            'overhang_ball_fault': 'overhang',
+            'overhang_cage_fault': 'overhang',
+            'overhang_outer_race': 'overhang'
+        }
+
+        y_top = y.map(lambda label: top_level_labels.get(label, 'unknown'))
+        self.train_model(X, y_top, 'level1', 'top', use_sub_model=False)
+
+        # Sub-class models (using SVM)
+        sub_classes = {
+            'misalignment': ['horizontal-misalignment', 'vertical-misalignment'],
+            'underhang': ['underhang_ball_fault', 'underhang_cage_fault', 'underhang_outer_race'],
+            'overhang': ['overhang_ball_fault', 'overhang_cage_fault', 'overhang_outer_race']
+        }
+        for sub_level, labels in sub_classes.items():
+            sub_df = df[df['Label'].isin(labels)]
+            if len(sub_df['Label'].unique()) >= 2:
+                X_sub, y_sub, _ = preprocess_data(sub_df)
+                self.train_model(X_sub, y_sub, 'level2', sub_level, use_sub_model=True)
+            else:
+                print(f"⚠️ Skipping {sub_level}, not enough classes.")
+
+    def load_model(self, path):
+        return joblib.load(path)
+
+    def load_all_models(self):
+        levels = [
+            ('level1', 'top'),
+            ('level2', 'misalignment'),
+            ('level2', 'underhang'),
+            ('level2', 'overhang')
+        ]
+        for level, name in levels:
+            path = self._get_model_path(level, name)
+            if os.path.exists(path):
+                self.models[(level, name)] = self.load_model(path)
+                print(f"✅ Loaded model: {level} - {name}")
+            else:
+                print(f"⚠️ Model not found at: {path}")
+
+        # Load scaler if exists
+        scaler_path = os.path.join(self.base_path, "scaler.pkl")
+        if os.path.exists(scaler_path):
+            self.scaler = joblib.load(scaler_path)
+            print("✅ Scaler loaded.")
+        else:
+            print("⚠️ Scaler not found!")
+
+    def predict_sample(self, sample):
+        if self.scaler:
+            sample_scaled = self.scaler.transform(sample)
+        else:
+            sample_scaled = sample  # no scaling
+
+        top_model = self.models.get(('level1', 'top'))
+        if not top_model:
+            print("❌ Top-level model not loaded.")
+            return "unknown"
+
+        top_pred = top_model.predict(sample_scaled)[0]
+        print(f"🔍 Top-level prediction: {top_pred}")
+
+        if top_pred in ['normal', 'imbalance']:
+            return top_pred
+
+        sub_model = self.models.get(('level2', top_pred))
+        if sub_model:
+            final_pred = sub_model.predict(sample_scaled)[0]
+            print(f"🔍 Subtype prediction ({top_pred}): {final_pred}")
+            return final_pred
+        else:
+            print(f"⚠️ Sub-model for {top_pred} not found.")
+            return "unknown"
+
+# === اجرای برنامه ===
+
+# تنظیم مسیر مدل‌ها و بارگذاری آن‌ها
+base_path = "/content/drive/MyDrive/Colab Notebooks/MaFaulDa"
+detector = HierarchicalFaultDetector(base_path=base_path)
+detector.load_all_models()
+
+# دریافت ورودی کاربر
+def get_user_input():
+    while True:
+        user_input = input("🔢 لطفاً ویژگی‌های نمونه را وارد کنید (جدا شده با ,):\n")
+        try:
+            sample = np.array(user_input.strip().split(","), dtype=float).reshape(1, -1)
+            return sample
+        except ValueError:
+            print("❗ لطفاً فقط مقادیر عددی و با , وارد کنید.")
+
+# پیش‌بینی کلاس عیب
+test_sample = get_user_input()
+predicted_class = detector.predict_sample(test_sample)
+print(f"\n✅ کلاس عیب تشخیص‌داده‌شده: {predicted_class}")
+
+# امتیازی
+# Simulated dataset
+np.random.seed(42)
+labels = ['normal', 'imbalance', 'underhang_ball_fault', 'overhang_outer_race']
+data = []
+
+for label in labels:
+    df = pd.DataFrame(np.random.rand(50, 10))
+    df['Label'] = label
+    data.append(df)
+
+df = pd.concat(data, ignore_index=True)
+X = df.drop(columns=['Label'])
+y = df['Label']
+X = MinMaxScaler().fit_transform(X)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+models = {
+    'LogisticRegression': LogisticRegression(max_iter=1000),
+    'SGDClassifier': SGDClassifier(),
+    'Perceptron': Perceptron()
+}
+
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    print(f"\n{name} Accuracy: {accuracy_score(y_test, y_pred):.2f}")
+    print(classification_report(y_test, y_pred))
+
+    tsne_2d = TSNE(n_components=2, random_state=42)
+X_2d = tsne_2d.fit_transform(X)
+
+plt.figure(figsize=(8, 6))
+for label in np.unique(y):
+    plt.scatter(X_2d[y == label, 0], X_2d[y == label, 1], label=label)
+plt.legend()
+plt.title("t-SNE 2D Projection")
+plt.xlabel("Component 1")
+plt.ylabel("Component 2")
+plt.grid(True)
+plt.show()
+
+# 3D
+tsne_3d = TSNE(n_components=3, random_state=42)
+X_3d = tsne_3d.fit_transform(X)
+
+fig = plt.figure(figsize=(10, 7))
+ax = fig.add_subplot(111, projection='3d')
+for label in np.unique(y):
+    ax.scatter(X_3d[y == label, 0], X_3d[y == label, 1], X_3d[y == label, 2], label=label)
+ax.set_title("t-SNE 3D Projection")
+ax.set_xlabel("X")
+ax.set_ylabel("Y")
+ax.set_zlabel("Z")
+plt.legend()
+plt.show()
