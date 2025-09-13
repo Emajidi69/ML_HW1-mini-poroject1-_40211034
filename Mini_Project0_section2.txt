@@ -1,0 +1,75 @@
+#mini_project1
+#Mohammad Sefid 40206864
+#Erfan Majidi 40211034
+
+import pandas as pd
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+
+# 3.2_A
+iris = load_iris()
+df = pd.DataFrame(data=iris.data, columns=iris.feature_names)
+df['species'] = iris.target
+print(df.columns)
+X_train, X_test, y_train, y_test = train_test_split(df.iloc[:, :-1], df['species'], test_size=0.3, random_state=42)
+X_train['species'] = y_train
+X_test['species'] = y_test
+X_train['train_test'] = 'train'
+X_test['train_test'] = 'test'
+final_df = pd.concat([X_train, X_test])
+print(final_df)
+
+# 3.2_B
+feature1 = 'sepal length (cm)'
+feature2 = 'petal length (cm)'
+plt.figure(figsize=(8, 6))
+sns.scatterplot(data=final_df, x=feature1, y=feature2, hue='species', palette='viridis')
+plt.title(f'Scatter Plot of {feature1} vs {feature2}')
+plt.xlabel(feature1)
+plt.ylabel(feature2)
+plt.legend(title='Species & Train/Test')
+plt.show()
+
+feature1 = 'sepal length (cm)'
+feature2 = 'sepal width (cm)'
+feature3 = 'petal length (cm)'
+fig = px.scatter_3d(final_df, x=feature1, y=feature2, z=feature3, color='species', symbol='train_test',
+title=f'3D Scatter Plot of {feature1}, {feature2}, {feature3}')
+fig.show()
+
+corr_matrix = final_df.iloc[:, :-2].corr()
+plt.figure(figsize=(8, 6))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f')
+plt.title('Heatmap of Feature Correlations')
+plt.show()
+
+features = ['sepal length (cm)', 'sepal width (cm)', 'petal length (cm)', 'petal width (cm)']
+plt.figure(figsize=(15, 10))
+for i, feature in enumerate(features, 1):
+    plt.subplot(2, 2, i)
+    sns.kdeplot(data=X_train, x=feature, label='Train', fill=True)
+    sns.kdeplot(data=X_test, x=feature, label='Test', fill=True)
+    plt.title(f'PDF of {feature}')
+    plt.xlabel(feature)
+    plt.ylabel('Density')
+    plt.legend()
+plt.tight_layout()
+plt.show()
+
+# 3.2_C
+feature = 'sepal length (cm)'
+bins = [4, 5, 6, 8]
+labels = ['کوتاه', 'متوسط', 'بلند']
+df['sepal_length_category'] = pd.cut(df[feature], bins=bins, labels=labels)
+print(df[['sepal length (cm)', 'sepal_length_category']])
+
+# 3.2_D
+df['species'] = iris.target
+setosa_df = df[df['species'] == 0]
+setosa_df = setosa_df.drop(columns=['species'])
+setosa_stats = setosa_df.describe()
+print("Setosa features:")
+print(setosa_stats)

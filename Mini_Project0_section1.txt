@@ -1,0 +1,80 @@
+#Mini_project1
+#Mohammad Sefid 40206864
+#Erfan Majidi 40211034
+
+import scipy.io
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.fft import fft
+import math
+
+# 3.1_A
+data = scipy.io.loadmat('109.mat')
+selected_signal = data['X109_DE_time']
+plt.plot(selected_signal)
+
+# 3.1_B
+start_index = 2 * 48000
+end_index = 2.01 * 48000
+end_index = int(end_index)
+time = np.arange(start_index, end_index) / 48000
+plt.plot(time, selected_signal[start_index:end_index])
+plt.xlabel('Time (seconds)')
+plt.ylabel('Amplitude')
+plt.title('Signal from 2s to 2.01s')
+plt.show()
+
+# 3.1_C
+def compute_fft(signal, sampling_rate=48000):
+    n = len(signal)
+    fft_result = fft(signal)
+    freq = np.fft.fftfreq(n, d=1/sampling_rate)
+    return freq[:n//2], np.abs(fft_result[:n//2])
+freq, magnitude = compute_fft(selected_signal, sampling_rate=48000)
+plt.plot(freq, magnitude)
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Magnitude')
+plt.title('Frequency Spectrum (48 kHz Sampling Rate)')
+plt.show()
+dominant_freq = freq[np.argmax(magnitude)]
+print(f'Dominant Frequency: {dominant_freq} Hz')
+
+# 3.1_D
+def segment_signal(signal, segment_size, overlap):
+    step = segment_size - overlap
+    segments = [signal[i:i + segment_size] for i in range(0, len(signal) - segment_size + 1, step)]
+    return np.array(segments)
+segment_size = 128
+overlap = 64
+segments = segment_signal(selected_signal, segment_size, overlap)
+
+# 3.1_E
+segments_2d = segments.reshape(segments.shape[0], segments.shape[1])
+df_segments = pd.DataFrame(segments_2d)
+selected_segments = df_segments.iloc[::13][:10]
+plt.figure(figsize=(10, 6))
+
+for i, (index, row) in enumerate(selected_segments.iterrows()):
+    plt.plot(row[:-1], label=f'Segment {index + 1}')
+plt.xlabel('Sample Number')
+plt.ylabel('Amplitude')
+plt.title('10 Segments (Multiples of 13)')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# 3.1_F
+def calculate_statistics(signal):
+    mean = sum(signal) / len(signal)
+    variance = sum((x - mean) ** 2 for x in signal) / len(signal)
+    std_dev = math.sqrt(variance)
+    rms = math.sqrt(sum(x ** 2 for x in signal) / len(signal))
+    return mean, std_dev, rms
+
+features = []
+for index, row in selected_segments.iterrows():
+    mean, std_dev, rms = calculate_statistics(row)
+    features.append([mean, std_dev, rms])
+df_features = pd.DataFrame(features, columns=['Mean', 'Standard Deviation', 'RMS'])
+df_features.to_csv('features.csv', index=False)
